@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
-import { BarChart3, CalendarDays, Clock, Layers } from "lucide-react";
+import { BarChart3, CalendarDays, ChartColumn, Clock, Layers } from "lucide-react";
+import { DistChart, distPeak } from "@/components/dist-chart";
 import { MonthHeatmap } from "@/components/month-heatmap";
 import { ReturnChart } from "@/components/return-chart";
 import { loadSeasonality } from "@/lib/market.functions";
@@ -11,6 +12,9 @@ import {
   pct,
   pctWin,
   type BucketStat,
+  type DistSpan,
+  type ForwardView,
+  type NormCompare,
   type SeasonalityData,
 } from "@/lib/seasonality";
 
@@ -129,6 +133,142 @@ function Section({
   );
 }
 
+function sigma(z: number | null) {
+  if (z == null || !Number.isFinite(z)) return "—";
+  const sign = z > 0 ? "+" : "";
+  return `${sign}${z.toFixed(1)}σ`;
+}
+
+function deviateWords(z: number | null) {
+  if (z == null) return "样本不够，不标偏离";
+  const mag = Math.abs(z);
+  const dir = z > 0.05 ? "偏高" : z < -0.05 ? "偏低" : "持平";
+  if (mag < 0.5) return "接近常态";
+  if (mag < 1) return `略${dir}`;
+  if (mag < 2) return dir;
+  return `明显${dir}`;
+}
+
+function ZScale({ z }: { z: number | null }) {
+  const clamped = z == null ? 0 : Math.max(-3, Math.min(3, z));
+  const left = ((clamped + 3) / 6) * 100;
+  return (
+    <div className="relative mt-2 h-3" aria-hidden="true">
+      <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-surface-2" />
+      <div className="absolute top-0 left-1/2 h-3 w-px bg-faint" />
+      {z != null ? (
+        <div
+          className={cn("absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full", z >= 0 ? "bg-up" : "bg-down")}
+          style={{ left: `${left}%` }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function NormRow({ row }: { row: NormCompare }) {
+  return (
+    <li className="border-t border-line py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm text-fg">
+            {row.label}
+            {row.partial ? <span className="ml-2 text-xs text-brass">未走完</span> : null}
+          </p>
+          <p className="text-xs text-faint">{row.detail}</p>
+        </div>
+        <div className="text-right">
+          <p className={cn("font-mono text-xl tabular-nums", tone(row.current))}>{pct(row.current)}</p>
+          <p className="text-xs text-faint">常态 {pct(row.avg)}</p>
+        </div>
+      </div>
+      <ZScale z={row.z} />
+      <p className="mt-1 text-sm text-muted">
+        <span className={cn("font-mono tabular-nums", row.z == null ? "text-faint" : tone(row.z))}>{sigma(row.z)}</span>
+        {" · "}
+        {deviateWords(row.z)}
+        {" · "}
+        对照{row.norm}
+        {row.n ? `，${row.n} 次，波动 ${(row.stdev * 100).toFixed(2)}%` : ""}
+      </p>
+      {row.also ? (
+        <p className="mt-1 text-xs text-faint">
+          {row.also.norm}的常态是 {pct(row.also.avg)}，相对它 {sigma(row.also.z)}（{deviateWords(row.also.z)}，{row.also.n} 次）
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
+function bandText(view: ForwardView) {
+  const analogs = view.analogs.toLocaleString("zh-CN");
+  const pool = view.pool.toLocaleString("zh-CN");
+  if (view.band === "全部") return `同一进度的历史只有 ${pool} 次，下面全部用上。`;
+  if (view.band === "最近") return `没有落在 1.5σ 以内的，改用涨跌最接近的 ${analogs} 次。`;
+  if (view.analogs < 8) return `只有 ${analogs} 次落在 ${view.band} 以内。样本少，下面就用这几次。`;
+  if (view.band === "0.5σ") return `用了 ${analogs} 次，当时涨跌和现在相差不超过 0.5 个标准差（同类 ${pool} 次）。`;
+  return `0.5σ 以内的次数不够，放宽到 ${view.band}，用了 ${analogs} 次（同类 ${pool} 次）。`;
+}
+
+function ForwardBlock({ view }: { view: ForwardView }) {
+  const year = view.horizons.find((horizon) => horizon.key === "year") ?? view.horizons[view.horizons.length - 1];
+  return (
+    <div>
+      <p className="text-sm text-fg">
+        {view.progress}
+        {view.partial ? <span className="ml-2 text-xs text-brass">未走完</span> : null}
+        {" · "}
+        现在 {pct(view.current)} · 同样进度的常态 {pct(view.avg)} ·{" "}
+        <span className={cn("font-mono tabular-nums", view.z == null ? "text-faint" : tone(view.z))}>{sigma(view.z)}</span>
+        {view.z != null ? `，${deviateWords(view.z)}` : ""}
+      </p>
+      <p className="mt-1 text-sm text-muted">{bandText(view)} 后面这几行只统计这些相近的次数。</p>
+      {year && year.n > 0 ? (
+        <p className="mt-2 text-sm text-fg">
+          从这里起，往后约一年，最深回撤的中位数是{" "}
+          <span className={cn("font-mono tabular-nums", tone(year.drawdownMedian))}>{pct(year.drawdownMedian)}</span>
+          ，最深的一次是{" "}
+          <span className={cn("font-mono tabular-nums", tone(year.drawdownWorst))}>{pct(year.drawdownWorst)}</span>
+          （{year.n.toLocaleString("zh-CN")} 次）。没跌破起点记为 0。
+        </p>
+      ) : (
+        <p className="mt-2 text-sm text-muted">往后一年的样本不够，看下面更短的窗口。</p>
+      )}
+      <ul className="mt-2">
+        {view.horizons.map((horizon) => (
+          <li key={horizon.key} className="border-t border-line py-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="text-sm text-fg">
+                {horizon.label}
+                <span className="ml-2 text-xs text-faint">{horizon.sessions} 个交易日</span>
+              </p>
+              <p className={cn("font-mono text-lg tabular-nums", horizon.n ? tone(horizon.avg) : "text-muted")}>
+                {horizon.n ? pct(horizon.avg) : "—"}
+              </p>
+            </div>
+            {horizon.n ? (
+              <p className="mt-1 text-sm text-muted">
+                期末中位 {pct(horizon.median)} · 上涨 {pctWin(horizon.win)} · 期末最差 {pct(horizon.worst)} ·{" "}
+                {horizon.n.toLocaleString("zh-CN")} 次
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-faint">后面没有足够的交易日。</p>
+            )}
+            {horizon.n ? (
+              <p className="mt-1 text-sm text-muted">
+                从这里最深回撤，中位{" "}
+                <span className={cn("font-mono tabular-nums", tone(horizon.drawdownMedian))}>{pct(horizon.drawdownMedian)}</span>
+                ，最差一次{" "}
+                <span className={cn("font-mono tabular-nums", tone(horizon.drawdownWorst))}>{pct(horizon.drawdownWorst)}</span>
+              </p>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function NowCard({
   label,
   title,
@@ -164,6 +304,8 @@ export function SeasonDesk({
 }) {
   const [symbol, setSymbol] = useState<string>(initial?.symbol ?? "^GSPC");
   const [years, setYears] = useState(initial?.years ?? 30);
+  const [span, setSpan] = useState<DistSpan>("day");
+  const [ahead, setAhead] = useState<DistSpan>("day");
   const [data, setData] = useState<SeasonalityData | null>(initial);
   const [error, setError] = useState<string | null>(initialError);
   const [pending, setPending] = useState(false);
@@ -293,6 +435,56 @@ export function SeasonDesk({
             {pending ? " · 更新中" : ""}
           </p>
 
+          {data.norms?.length ? (
+            <section className="mb-4 rounded-2xl border border-line bg-surface p-4 sm:p-6">
+              <p className="font-serif text-xs tracking-widest text-brass uppercase">Now</p>
+              <h2 className="text-xl font-semibold text-fg">现在离常态多远</h2>
+              <p className="mt-1 text-sm text-pretty text-muted">
+                0 是这段历史的平均。+1σ 表示比常态高出一个标准差，-1σ 表示低一个。刻度画到 ±3σ，数字本身不截断。对照不含当前这一段。月和季比的是历年同一个月、同一个季度；日、周、年比的是全部同类样本。没走完的按已经实现的收益算，所以周期刚开始时，数字通常更靠近零。
+              </p>
+              <ul className="mt-2">
+                {data.norms.map((row) => (
+                  <NormRow key={row.key} row={row} />
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {data.forward ? (
+            <section className="mb-4 rounded-2xl border border-line bg-surface p-4 sm:p-6">
+              <p className="font-serif text-xs tracking-widest text-brass uppercase">After</p>
+              <h2 className="text-xl font-semibold text-fg">从这里往后</h2>
+              <p className="mt-1 text-sm text-pretty text-muted">
+                先找历史上走到同一进度、涨跌也接近现在的那些次。再看它们之后一个交易日、一周（5 个交易日）、一月（21）、一季（63）、一年（252）的期末涨跌，以及从当时收盘往下的最深回撤。回撤只看之后的收盘，不含盘中低点。没跌破起点记为 0。这是事后分布，不是预测。
+              </p>
+              <div className="mt-3 mb-3 flex gap-2 overflow-x-auto">
+                {(
+                  [
+                    ["day", "今日"],
+                    ["week", "本周"],
+                    ["month", "本月"],
+                    ["quarter", "本季"],
+                    ["year", "本年"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={ahead === key}
+                    onClick={() => setAhead(key)}
+                    className={cn(
+                      "min-h-11 shrink-0 rounded-full border px-4 text-sm",
+                      ahead === key ? "border-brass bg-brass-dim text-fg" : "border-line text-muted",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <ForwardBlock view={data.forward[ahead]} />
+            </section>
+          ) : null}
+
           <div className="mb-4 grid gap-3 sm:grid-cols-3">
             <NowCard
               label="这个月"
@@ -337,6 +529,7 @@ export function SeasonDesk({
 
           <nav className="mb-4 flex gap-2 overflow-x-auto text-sm">
             {[
+              ["#dist", "分布"],
               ["#months", "月份"],
               ["#quarters", "季度"],
               ["#weekdays", "星期"],
@@ -349,6 +542,58 @@ export function SeasonDesk({
           </nav>
 
           <div className="flex flex-col gap-4">
+            {data.dists ? (
+              <section id="dist" className="scroll-mt-28 rounded-2xl border border-line bg-surface p-4 sm:p-6">
+                <div className="mb-4 flex items-start gap-3">
+                  <span className="mt-0.5 text-brass" aria-hidden="true">
+                    <ChartColumn className="size-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="font-serif text-xs tracking-widest text-brass uppercase">Distribution</p>
+                    <h2 className="text-xl font-semibold text-fg">涨跌落在哪一档</h2>
+                    <p className="mt-1 text-sm text-pretty text-muted">
+                      横轴是这段时间涨了或跌了多少，柱子是有多少次落在这一档。每日是收盘对收盘。每周、每月、每季、每年把这一段里的交易日连乘。没走完的周、月、季、年按已经实现的收益算。描金边的那一档是平均数落点。
+                    </p>
+                  </div>
+                </div>
+                <div className="mb-3 flex gap-2 overflow-x-auto">
+                  {(
+                    [
+                      ["day", "每日"],
+                      ["week", "每周"],
+                      ["month", "每月"],
+                      ["quarter", "每季"],
+                      ["year", "每年"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      aria-pressed={span === key}
+                      onClick={() => setSpan(key)}
+                      className={cn(
+                        "min-h-11 shrink-0 rounded-full border px-4 text-sm",
+                        span === key ? "border-brass bg-brass-dim text-fg" : "border-line text-muted",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mb-2 text-sm text-fg">
+                  {data.dists[span].n.toLocaleString("zh-CN")} 次 · 平均 {pct(data.dists[span].avg)} · 中位{" "}
+                  {pct(data.dists[span].median)} · 上涨 {pctWin(data.dists[span].win)} · 波动{" "}
+                  {(Math.abs(data.dists[span].stdev) * 100).toFixed(2)}%
+                </p>
+                <p className="mb-2 text-sm text-muted">{distPeak(data.dists[span])}</p>
+                <DistChart dist={data.dists[span]} />
+                <p className="mt-2 text-xs text-faint">
+                  两端是超出坐标的尾巴。每日 ±4%，每周 ±8%，每月 ±12%，每季 ±20%，每年 ±40%。最好 {pct(data.dists[span].best)}，最差{" "}
+                  {pct(data.dists[span].worst)}。
+                </p>
+              </section>
+            ) : null}
+
             <Section
               id="months"
               kicker="Month"
