@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Noto Sans SC", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Fraunces", "Times New Roman", serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --color-bg: #10140f;
+  --color-surface: #1b221c;
+  --color-surface-2: #232c24;
+  --color-fg: #e8efe4;
+  --color-muted: #9aab9c;
+  --color-faint: #6e7f70;
+  --color-line: #314035;
+  --color-up: #8fd0a8;
+  --color-up-dim: #1c3326;
+  --color-down: #e38b7c;
+  --color-down-dim: #3a2420;
+  --color-brass: #d7b15a;
+  --color-brass-dim: #3a3216;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.heat-up {
+  background-color: color-mix(in oklab, var(--color-up) calc(var(--t) * 88%), var(--color-surface-2));
+}
+
+.heat-down {
+  background-color: color-mix(in oklab, var(--color-down) calc(var(--t) * 88%), var(--color-surface-2));
+}
+
+.heat-flat {
+  background-color: var(--color-surface-2);
+}
+
+.heat-on {
+  outline: 2px solid var(--color-brass);
+  outline-offset: -2px;
+}
