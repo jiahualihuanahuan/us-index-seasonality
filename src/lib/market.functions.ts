@@ -6,11 +6,13 @@ import {
   type HourlyBar,
   type SeasonalityResult,
 } from "@/lib/seasonality";
+import { buildDipReport } from "@/lib/dip-signal";
 
 type CacheEntry = { at: number; daily: DailyBar[]; hourly: HourlyBar[] };
 
 const cache = new Map<string, CacheEntry>();
 const TTL_MS = 15 * 60 * 1000;
+const DIP_EVENTS_SENT = 40;
 const UA = "Mozilla/5.0 (compatible; Jilv/1.0; +https://finance.yahoo.com)";
 
 type YahooChart = {
@@ -86,12 +88,16 @@ export const loadSeasonality = createServerFn({ method: "GET" })
     if (!indexMeta(data.symbol)) return { ok: false, error: "不认识这个指数。" };
     try {
       const bars = await loadBars(data.symbol);
-      return buildSeasonality({
+      const result = buildSeasonality({
         symbol: data.symbol,
         years: data.years,
         daily: bars.daily,
         hourly: bars.hourly,
       });
+      if (!result.ok) return result;
+      const dip = buildDipReport({ daily: bars.daily, years: result.years });
+      // The page lists recent signals; the full history stays server-side.
+      return { ...result, dip: dip ? { ...dip, events: dip.events.slice(-DIP_EVENTS_SENT) } : null };
     } catch (error) {
       const message = error instanceof Error ? error.message : "行情暂时取不到";
       return { ok: false, error: message };

@@ -1,3 +1,5 @@
+import type { DipReport } from "./dip-signal.ts";
+
 export const INDICES = [
   { symbol: "^GSPC", name: "标普 500", short: "SPX", note: "大盘" },
   { symbol: "^NDX", name: "纳指 100", short: "NDX", note: "大科技" },
@@ -156,6 +158,8 @@ export type SeasonalityData = {
     month: number;
     ret: number;
   };
+  /** -3σ seasonal dip signal and its backtest over the full daily history. */
+  dip?: DipReport | null;
 };
 
 export type SeasonalityResult = SeasonalityData | { ok: false; error: string };

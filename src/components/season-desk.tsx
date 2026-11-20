@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { BarChart3, CalendarDays, ChartColumn, Clock, Layers } from "lucide-react";
+import { DipCard } from "@/components/dip-card";
 import { DistChart, distPeak } from "@/components/dist-chart";
 import { MonthHeatmap } from "@/components/month-heatmap";
 import { ReturnChart } from "@/components/return-chart";
@@ -450,6 +451,10 @@ export function SeasonDesk({
             </section>
           ) : null}
 
+          {data.dip ? (
+            <DipCard dip={data.dip} windowLabel={WINDOWS.find((item) => item.years === data.years)?.label ?? `${data.years} 年`} />
+          ) : null}
+
           {data.forward ? (
             <section className="mb-4 rounded-2xl border border-line bg-surface p-4 sm:p-6">
               <p className="font-serif text-xs tracking-widest text-brass uppercase">After</p>
@@ -529,6 +534,7 @@ export function SeasonDesk({
 
           <nav className="mb-4 flex gap-2 overflow-x-auto text-sm">
             {[
+              ["#dip", "−3σ"],
               ["#dist", "分布"],
               ["#months", "月份"],
               ["#quarters", "季度"],
