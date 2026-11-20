@@ -10,7 +10,7 @@
 docker compose up -d --build
 ```
 
-浏览器打开 `http://<服务器>:8080`。左边的端口被占用时：
+浏览器打开 `http://<服务器>:8098`。要换宿主机端口：
 
 ```bash
 JILV_PORT=8090 docker compose up -d --build
